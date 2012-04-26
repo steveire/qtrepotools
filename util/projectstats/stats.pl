@@ -51,6 +51,17 @@ sub recurseSubmodules()
 
 sub getAllCommits() {
     use POSIX qw(strftime);
+    my $end = time;
+    $end = int(($end / 86400 + 4) / 7) * 7;
+    $end -= 4;
+    $end *= 86400;
+    my $begin = $end - 16 * 7 * 86400 + 86400;
+
+    $begin = strftime("%a %F", gmtime($begin));
+    $end = strftime("%a %F", gmtime($end));
+
+    print "\"Data from $begin to $end\"\n\n";
+
     foreach my $repo (@repos) {
 	chdir($repo) or die;
 
@@ -64,7 +75,7 @@ sub getAllCommits() {
 
 	# Now get a listing of every committer in those branches
 	open GIT, "-|",
-	    "git", "log", "--since=112.days.ago",
+	    "git", "log", "--since=$begin", "--until=$end",
 	    "--pretty=format:%ae %ct", @branches
 		or die("Cannot run git-log on $repo: $!");
 	while (<GIT>) {
