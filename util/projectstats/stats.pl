@@ -7,6 +7,7 @@ my @repos;
 my %commits;
 my $remote = "origin";
 my $limit = 0;
+my $csvfh;
 
 sub mapAuthorToEmployer($) {
     return "(bot)" if $_ eq "qt_submodule_update_bot\@ovi.com";
@@ -89,7 +90,8 @@ sub getAllCommits() {
     }
 }
 
-sub printAuthorStats($) {
+sub printCsvStats($) {
+    select $csvfh;
     my %commits = %{$_[0]};
     my %activity_per_week;
     my %activity_overall;
@@ -97,7 +99,7 @@ sub printAuthorStats($) {
     while (my ($week, $commits) = each %commits) {
         foreach my $author (@{$commits}) {
             # Author stats
-            $activity_per_week{$author}{$week}++;
+            $activity_per_week{$week}{$author}++;
             $activity_overall{$author}++;
 
             # overall stats
@@ -114,38 +116,34 @@ sub printAuthorStats($) {
 
     my @sorted_weeks = sort keys %total_per_week;
 
-    # print week header
-    map { print ',"' . $_ . '"' } @sorted_weeks;
+    # print author header
+    map { print ',"' . $_ . '"' } @sorted_authors;
+    print ',"others"' if $limit > 0;
     print "\n";
 
     # print data
-    my %total_printed;
-    foreach my $author (@sorted_authors) {
-        my %this_author = %{$activity_per_week{$author}};
-        print "\"$author\",";
+    foreach my $week (@sorted_weeks) {
+        my %this_week = %{$activity_per_week{$week}};
+	my $total_printed = 0;
+        print "\"$week\",";
 
-        foreach my $week (@sorted_weeks) {
-            my $count = $this_author{$week};
+        foreach my $author (@sorted_authors) {
+            my $count = $this_week{$author};
             $count = 0 unless defined($count);
-            $total_printed{$week} += $count;
+            $total_printed += $count;
             print "$count,";
         }
-        print "\n";
-    }
 
-    # print the "others" line
-    if ($limit > 0) {
-        print '"others",';
-        foreach my $week (@sorted_weeks) {
-            print $total_per_week{$week} - $total_printed{$week};
-            print ',';
-        }
+	# print the "others" column
+	print $total_per_week{$week} - $total_printed
+	    if $limit > 0;
         print "\n";
     }
     print "\n";
+    select STDOUT;
 }
 
-sub printSummary() {
+sub printCsvSummary() {
     my %total_per_week;
     my $grand_total;
     while (my ($week, $commits) = each %commits) {
@@ -156,6 +154,7 @@ sub printSummary() {
         }
     }
 
+    select $csvfh;
     my @sorted_weeks = sort keys %total_per_week;
     map { print ',"' . $_ . '"' } @sorted_weeks;
     print "\n";
@@ -163,10 +162,12 @@ sub printSummary() {
     map { printf "%d,", $total_per_week{$_} } @sorted_weeks;
     print "\n\n";
 
-    print '"Grand Total",' . $grand_total . "\n"
+    print '"Grand Total",' . $grand_total . "\n";
+    select STDOUT;
 }
 
 my $recurse = 1;
+my $csv;
 while (scalar @ARGV) {
     $_ = shift @ARGV;
     s/^--/-/;
@@ -178,15 +179,30 @@ while (scalar @ARGV) {
         $remote = shift @ARGV;
     } elsif (/^-limit/) {
         $limit = shift @ARGV;
+    } elsif (/^-csv/) {
+	$csv = shift @ARGV;
     } elsif (!/^-/) {
         push @repos, $_;
     }
 }
 
+die "No output defined, not doing anything\n" .
+    "Please use --csv <outputfile>"
+    unless defined($csv);
+
+if ($csv eq "-") {
+    open($csvfh, ">&STDOUT");
+} else {
+    open($csvfh, ">", $csv)
+	or die "Cannot open output file $csv: $!";
+}
+
 recurseSubmodules() if $recurse;
 getAllCommits();
-printAuthorStats(\%commits);
-printAuthorStats(\%{mapToEmployers(\%commits)});
-printSummary();
+if (defined($csv)) {
+    printCsvStats(\%commits);
+    printCsvStats(\%{mapToEmployers(\%commits)});
+    printCsvSummary();
+}
 
 # -*- mode: perl; encoding: utf-8; indent-tabs-mode: nil -*-
