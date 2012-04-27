@@ -178,6 +178,12 @@ sub printCsvStats($) {
         print "\n";
     }
     print "\n";
+
+    # print unique contributors
+    map { print ",\"$_\"" } @sorted_weeks;
+    print "\n\"Unique contributors\"";
+    map { print ',' . scalar $activity_per_week{$_} } @sorted_weeks;
+
     select STDOUT;
 }
 
@@ -284,6 +290,16 @@ END
         plot for [i = $colcount:3:-1] \\
             '$datafile' using 1:(100*accumulate(i)/accumulate($colcount)):xticlabels(2) \\
             title columnhead(i) with filledcurves x1 linestyle i-2
+
+        set output '$gnuplot.$dataname.unique.png'
+        set xrange [0.5:*]
+        set yrange [0:*]
+        set format y "%g"
+        set boxwidth 0.9 relative
+        set style fill solid 1.0
+        set key off
+        set ylabel "Contributors"
+        plot '-' using 1:3:xticlabels(2) with boxes fillstyle solid lc rgb("#6EBD23")
 END
 
     # write data
@@ -309,6 +325,8 @@ END
         }
 
         print "$i \"$label\" ";
+        print $gnuplotmaster "$i \"$label\" " .
+            scalar (keys %this_week) . "\n";
 
         foreach my $author (@sorted_authors) {
             my $count = $this_week{$author};
@@ -325,6 +343,7 @@ END
     }
 
     close DATAFILE;
+    print $gnuplotmaster "e\n\n";
     select STDOUT;
 }
 
