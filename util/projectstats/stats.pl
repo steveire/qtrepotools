@@ -14,14 +14,22 @@ my @exclude;
 my $mode = "weekly";
 my $since;
 
+my @genericDomains = qw(gmail.com googlemail.com hotmail.com
+kde.org kdemail.net kate-editor.org oxygen-icons.org mail.com
+freedesktop.org gnome.org
+gentoo.org fedoraproject.org freebsd.org free.fr freenet.de
+gmx.at gmx.com gmx.de gmx.net terra.es web.de webspeed.dk yahoo.com yahoo.fr);
+
 sub mapAuthorToEmployer($) {
     return "(bot)" if $_ eq "qt_submodule_update_bot\@ovi.com";
-    /(.*)@(.*)/;
+    return "(bot)" if $_ eq "scripty\@kde.org";
+    /(.*)@(.*)/ or return $_;
     my $user = $1;
-    my $domain = $2;
+    my $domain = lc $2;
     return "nokia.com" if ($domain eq "ovi.com");
-    return "$user\@$domain" if ($domain eq "gmail.com" || $domain eq "kde.org");
+    return "$user\@$domain" if grep { $_ eq $domain } @genericDomains;
     return "QNX (by kdab.com)" if $_ =~ /\.qnx\@kdab.com/;
+    return "intel.com" if $_ =~ /.intel.com$/;
     return $domain;
 }
 
