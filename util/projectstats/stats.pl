@@ -5,11 +5,12 @@ use warnings;
 # global variables
 my @repos;
 my %commits;
-my $remote = "origin";
+my $refs = "refs/remotes/origin";
 my $limit = 0;
 my $csvfh;
 my $gnuplot;
 my $gnuplotmaster;
+my @exclude;
 
 sub mapAuthorToEmployer($) {
     return "(bot)" if $_ eq "qt_submodule_update_bot\@ovi.com";
@@ -70,7 +71,7 @@ sub getAllCommits() {
 
         # Get a listing of branches in the remote
         open GIT, "-|",
-            "git", "for-each-ref", "--format=%(objectname)", "refs/remotes/$remote"
+            "git", "for-each-ref", "--format=%(objectname)", $refs
                 or die "Cannot run git-for-each-ref on $repo: $!";
         my @branches = map { chomp; $_ } <GIT>;
         close GIT;
@@ -100,6 +101,7 @@ sub printCsvStats($) {
     my %total_per_week;
     while (my ($week, $commits) = each %commits) {
         foreach my $author (@{$commits}) {
+            next if grep { $_ eq $author } @exclude;
             # Author stats
             $activity_per_week{$week}{$author}++;
             $activity_overall{$author}++;
@@ -150,6 +152,7 @@ sub printCsvSummary() {
     my $grand_total;
     while (my ($week, $commits) = each %commits) {
         foreach my $author (@{$commits}) {
+            next if grep { $_ eq $author } @exclude;
             # overall stats
             $total_per_week{$week}++;
             $grand_total++;
@@ -171,12 +174,13 @@ sub printCsvSummary() {
 sub printGnuplotStats($%) {
     my $dataname = $_[0];
     my %commits = %{$_[1]};
-    my $datafile = "$gnuplot.$dataname.dat";
+    my $datafile = "$gnuplot.$dataname.csv";
     my %activity_per_week;
     my %activity_overall;
     my %total_per_week;
     while (my ($week, $commits) = each %commits) {
         foreach my $author (@{$commits}) {
+            next if grep { $_ eq $author } @exclude;
             # Author stats
             $activity_per_week{$week}{$author}++;
             $activity_overall{$author}++;
@@ -201,16 +205,33 @@ sub printGnuplotStats($%) {
     select $gnuplotmaster;
     print <<END;
         reset
-        set terminal png size 1400, 600
+        set terminal pngcairo size 1400, 600
+        set grid front
         set key center below
         set key autotitle columnhead
         set style fill solid
         set format x "%s"
+        set rmargin 5
         set xlabel "Weeks"
         set ylabel "Commits"
 
         accumulate(c) = column(c) + (c > 3 ? accumulate(c - 1) : 0)
+        set style increment
+END
 
+    # Generate some colours
+    my $i = 1;
+    for (my $j = 1; $j < 5; $j++) {
+        for (qw(255 65280 16711680 65535 16711935 16776960)) {
+            my $color = $_;
+            $color /= $j;
+            $color *= 3 if $j == 4;
+            printf "set style line %d linecolor rgb \"#%06X\"\n",
+                $i++, $color;
+        }
+    }
+
+    print <<END;
         set output '$gnuplot.$dataname.total.png'
         plot '$datafile' using 1:(accumulate($colcount)):xticlabels(2) \\
             with filledcurves x1 linecolor 3
@@ -218,15 +239,14 @@ sub printGnuplotStats($%) {
         set output '$gnuplot.$dataname.absolute.png'
         plot for [i = $colcount:3:-1] \\
             '$datafile' using 1:(accumulate(i)):xticlabels(2) \\
-            title columnhead(i) with filledcurves x1 linecolor i-1
+            title columnhead(i) with filledcurves x1 linestyle i-2
 
         set output '$gnuplot.$dataname.relative.png'
         set yrange [0:100]
         set format y '%.0f%%'
         plot for [i = $colcount:3:-1] \\
             '$datafile' using 1:(100*accumulate(i)/accumulate($colcount)):xticlabels(2) \\
-            title columnhead(i) with filledcurves x1 linecolor i-1
-
+            title columnhead(i) with filledcurves x1 linestyle i-2
 END
 
     # write data
@@ -238,7 +258,7 @@ END
     map { print "\"$_\" "; } @sorted_authors;
     print 'others ' if $limit > 0;
     print "\n";
-    my $i = 0;
+    $i = 0;
     foreach my $week (@sorted_weeks) {
         my %this_week = %{$activity_per_week{$week}};
         my $total_printed = 0;
@@ -263,22 +283,33 @@ END
 }
 
 my $recurse = 1;
+my $printAuthor = 1;
+my $printEmployer = 1;
 my $csv;
 while (scalar @ARGV) {
     $_ = shift @ARGV;
     s/^--/-/;
     my $argvalue = 1;
-    s/^-no-// and $argvalue = 0;
+    if (m/^-no-/) {
+        s/^-no//;
+        $argvalue = 0;
+    }
     if (/^-recurse/) {
         $recurse = $argvalue;
-    } elsif (/-^remote/) {
-        $remote = shift @ARGV;
+    } elsif (/^-author/) {
+        $printAuthor = $argvalue;
+    } elsif (/^-employer/) {
+        $printEmployer = $argvalue;
+    } elsif (/^-refs/) {
+        $refs = shift @ARGV;
     } elsif (/^-limit/) {
         $limit = shift @ARGV;
     } elsif (/^-csv/) {
         $csv = shift @ARGV;
     } elsif (/^-gnuplot/) {
         $gnuplot = shift @ARGV;
+    } elsif (/^-exclude/) {
+        push @exclude, shift @ARGV;
     } elsif (!/^-/) {
         push @repos, $_;
     }
@@ -299,7 +330,7 @@ if (!defined($csv)) {
 if (!defined($gnuplot)) {
 } elsif ($gnuplot eq "-") {
     open($gnuplotmaster, ">&STDOUT");
-    # write the secondary data files to "gnuplot.NNN.dat"
+    # write the secondary data files to "gnuplot.NNN.csv"
     $gnuplot = "gnuplot";
 } else {
     open($gnuplotmaster, ">", $gnuplot)
@@ -313,13 +344,13 @@ getAllCommits();
 chdir $pwd or die;
 my %employerCommits = %{mapToEmployers(\%commits)};
 if (defined($csv)) {
-    printCsvStats(\%commits);
-    printCsvStats(\%employerCommits);
+    printCsvStats(\%commits) if $printAuthor;
+    printCsvStats(\%employerCommits) if $printEmployer;
     printCsvSummary();
 }
 if (defined($gnuplot)) {
-    printGnuplotStats("author", \%commits);
-    printGnuplotStats("employer", \%employerCommits);
+    printGnuplotStats("author", \%commits) if $printAuthor;
+    printGnuplotStats("employer", \%employerCommits)  if $printEmployer;
 }
 
 # -*- mode: perl; encoding: utf-8; indent-tabs-mode: nil -*-
