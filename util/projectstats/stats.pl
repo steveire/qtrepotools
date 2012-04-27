@@ -11,6 +11,8 @@ my $csvfh;
 my $gnuplot;
 my $gnuplotmaster;
 my @exclude;
+my $mode = "weekly";
+my $since;
 
 sub mapAuthorToEmployer($) {
     return "(bot)" if $_ eq "qt_submodule_update_bot\@ovi.com";
@@ -55,15 +57,39 @@ sub recurseSubmodules()
 
 sub getAllCommits() {
     use POSIX qw(strftime);
+    my $begin;
     my $end = time;
-    $end = int(($end / 86400 + 4) / 7) * 7;
-    $end -= 4;
-    $end *= 86400;
-    my $begin = $end - 16 * 7 * 86400 + 86400;
+    my $timeformat;
 
-    $begin = strftime("%a %F", gmtime($begin));
-    $end = strftime("%a %F", gmtime($end));
+    if ($mode eq "weekly") {
+        # Get the last 16 weeks
+        $timeformat = "%GW%V";
+        $end = int(($end / 86400 + 4) / 7) * 7;
+        $end -= 4;
+        $end *= 86400;
+        $begin = $end - 16 * 7 * 86400 + 86400;
+        $begin = strftime("%a %F", gmtime($begin));
+        $end = strftime("%a %F", gmtime($end));
+    } else { #monthly
+        # Get the last 6 months
+        $timeformat = "%Y-%m";
 
+        my @breakdown = gmtime $end;
+        # Day 0 is the last day of the previous month
+        $end = [ (0, 0, 0, 0, $breakdown[4], $breakdown[5]) ];
+        $breakdown[4] -= 6;
+        if ($breakdown[4] < 0) {
+            $breakdown[4] += 12;
+            $breakdown[5]--;
+        }
+        $begin = [ (0, 0, 0, 1, $breakdown[4], $breakdown[5]) ];
+
+        $begin = strftime("%a %F", @{$begin});
+        $end = strftime("%a %F", @{$end});
+    }
+
+
+    $begin = $since if defined($since);
     print STDERR "Data from $begin to $end\n";
 
     foreach my $repo (@repos) {
@@ -85,7 +111,7 @@ sub getAllCommits() {
         while (<GIT>) {
             chomp;
             my ($author, $date) = split / /;
-            my $week = strftime "%YW%V", gmtime($date);
+            my $week = strftime $timeformat, gmtime($date);
             push @{$commits{$week}}, $author;
         }
         close GIT;
@@ -200,6 +226,8 @@ sub printGnuplotStats($%) {
     my @sorted_weeks = sort keys %total_per_week;
 
     my $colcount = scalar @sorted_authors + 3;
+    $colcount-- if grep { $_ eq "others" } @exclude and $limit > 0;
+    $colcount-- if $limit == 0;
 
     # write the plot
     select $gnuplotmaster;
@@ -212,12 +240,13 @@ sub printGnuplotStats($%) {
         set style fill solid
         set format x "%s"
         set rmargin 5
-        set xlabel "Weeks"
         set ylabel "Commits"
 
         accumulate(c) = column(c) + (c > 3 ? accumulate(c - 1) : 0)
         set style increment
 END
+    print "set xlabel 'Week'\n" if $mode eq "weekly";
+    print "set xlabel 'Month'\n" if $mode eq "monthly";
 
     # Generate some colours
     my $i = 1;
@@ -262,7 +291,16 @@ END
     foreach my $week (@sorted_weeks) {
         my %this_week = %{$activity_per_week{$week}};
         my $total_printed = 0;
-        print "$i \"$week\" ";
+
+        my $label;
+        if (scalar @sorted_weeks <= 16
+            || ($i % int(scalar @sorted_weeks / 12)) == 0) {
+            $label = $week;
+        } else {
+            $label = "";
+        }
+
+        print "$i \"$label\" ";
 
         foreach my $author (@sorted_authors) {
             my $count = $this_week{$author};
@@ -310,10 +348,17 @@ while (scalar @ARGV) {
         $gnuplot = shift @ARGV;
     } elsif (/^-exclude/) {
         push @exclude, shift @ARGV;
+    } elsif (/^-since/) {
+        $since = shift @ARGV;
+    } elsif (/^-mode/) {
+        $mode = shift @ARGV;
     } elsif (!/^-/) {
         push @repos, $_;
     }
 }
+
+die "Mode must be ''weekly' or 'monthly'"
+    unless $mode eq "weekly" or $mode eq "monthly";
 
 die "No output defined, not doing anything\n" .
     "Please use --csv <outputfile> or --gnuplot <basename>"
