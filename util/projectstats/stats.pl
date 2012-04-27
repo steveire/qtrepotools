@@ -84,7 +84,7 @@ sub getAllCommits() {
         while (<GIT>) {
             chomp;
             my ($author, $date) = split / /;
-            my $week = strftime "%F", gmtime($date);
+            my $week = strftime "%YW%V", gmtime($date);
             push @{$commits{$week}}, $author;
         }
         close GIT;
@@ -205,10 +205,8 @@ sub printGnuplotStats($%) {
         set key center below
         set key autotitle columnhead
         set style fill solid
-        set xdata time
-        set timefmt "%Y-%m-%d"
-        set format x "%F"
-        set xlabel "Date"
+        set format x "%s"
+        set xlabel "Weeks"
         set ylabel "Commits"
 
         accumulate(c) = column(c) + (c > 3 ? accumulate(c - 1) : 0)
@@ -236,28 +234,19 @@ END
         or die "Cannot open data file $datafile: $!";
     select DATAFILE;
 
-    print 'Date Week ';
+    print 'idx Week ';
     map { print "\"$_\" "; } @sorted_authors;
     print 'others ' if $limit > 0;
     print "\n";
-    my @previous_weeks;
+    my $i = 0;
     foreach my $week (@sorted_weeks) {
         my %this_week = %{$activity_per_week{$week}};
-        push @previous_weeks, \%this_week;
-        next unless scalar @previous_weeks == 7;
-
         my $total_printed = 0;
-        print "$week \"";
-        $week =~ /(\d+)-(\d+)-(\d+)/;
-        print strftime "%YW%V", 0, 0, 0, $3, $2 - 1, $1 - 1900;
-        print "\" ";
+        print "$i \"$week\" ";
 
         foreach my $author (@sorted_authors) {
-            my $count = 0;
-            foreach (@previous_weeks) {
-                my $value = $_->{$author};
-                $count += $value if defined($value);
-            }
+            my $count = $this_week{$author};
+            $count = 0 unless defined($count);
             $total_printed += $count;
             print "$count ";
         }
@@ -266,7 +255,7 @@ END
         print $total_per_week{$week} - $total_printed
             if $limit > 0;
         print "\n";
-        shift @previous_weeks;
+        $i++;
     }
 
     close DATAFILE;
