@@ -2,6 +2,8 @@
 use strict;
 use warnings;
 
+# perl stats.pl ~/dev/src/cmake --gnuplot cmake --since "4 years ago" --exclude "kwrobot@kitware.com" --exclude "libarchive-discuss@googlegroups.com" --exclude "curl-library@cool.haxx.se" --limit 10 --mode monthly --refs refs/heads/master --diffstat && gnuplot cmake.gnuplot
+
 # global variables
 my @repos;
 my %branchstats;
