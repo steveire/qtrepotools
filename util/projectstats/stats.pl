@@ -155,7 +155,15 @@ sub getAllCommits() {
             "git", "log", "-M", "--since=$begin", "--until=$end", "--no-merges",
             ($diffstat ? ( "--shortstat" ) : ()),
             "--pretty=format:%ae %ct %h %p", $branch, @prevbranches,
-            "--", "*.cpp", "*.h"
+            "--", "*.cpp", "*.h",
+            ":(exclude)Utilities/cmbzip2",
+            ":(exclude)Utilities/cmcompress",
+            ":(exclude)Utilities/cmcurl",
+            ":(exclude)Utilities/cmexpat",
+            ":(exclude)Utilities/cmjsoncpp",
+            ":(exclude)Utilities/cmlibarchive",
+            ":(exclude)Utilities/cmliblzma",
+            ":(exclude)Utilities/cmzlib"
                 or die("Cannot run git-log on $repo: $!");
             while (<GIT>) {
               commit_begin:
