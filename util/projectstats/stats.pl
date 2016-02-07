@@ -282,7 +282,8 @@ sub printCsvSummary() {
 
 sub printGnuplotStats($%) {
     my $dataname = $_[0];
-    my %commits = %{$_[1]};
+    my $datalabel = $_[1];
+    my %commits = %{$_[2]};
     my $datafile = "$gnuplot.$dataname.csv";
     my %activity_per_week;
     my %activity_overall;
@@ -301,8 +302,8 @@ sub printGnuplotStats($%) {
 
     # sort by decreasing order of activity
     my @sorted_authors;
-    if (scalar @_ >= 3) {
-        for (reverse @{$_[2]}) {
+    if (scalar @_ >= 4) {
+        for (reverse @{$_[3]}) {
             push @sorted_authors, $_ if defined($activity_overall{$_});
         }
     } else {
@@ -330,7 +331,7 @@ sub printGnuplotStats($%) {
         set style fill solid
         set format x "%s"
         set rmargin 5
-        set ylabel "Commits"
+        set ylabel "$datalabel"
 
         accumulate(c) = column(c) + (c > 3 ? accumulate(c - 1) : 0)
         set style increment
@@ -502,9 +503,9 @@ if (defined($csv)) {
     printCsvSummary();
 }
 if (defined($gnuplot)) {
-    printGnuplotStats("author", \%commits) if $printAuthor;
-    printGnuplotStats("employer", \%employerCommits)  if $printEmployer;
-    printGnuplotStats("volume.author", \%commitdiffstats)
+    printGnuplotStats("author", "Commits", \%commits) if $printAuthor;
+    printGnuplotStats("employer", "Commits", \%employerCommits)  if $printEmployer;
+    printGnuplotStats("volume.author", "Affected lines", \%commitdiffstats)
         if $printAuthor and $diffstat;
     $limit = 0;
     printGnuplotStats("branch", \%branchstats, \@sorted_branches) if $printBranches;
