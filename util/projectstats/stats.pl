@@ -360,6 +360,7 @@ END
     }
 
     print <<END;
+        set xtics rotate
         set output '$gnuplot.$dataname.total.png'
         plot '$datafile' using 1:(accumulate($colcount)):xticlabels(2) \\
             with filledcurves x1 linecolor 3
