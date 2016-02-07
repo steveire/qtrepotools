@@ -152,7 +152,7 @@ sub getAllCommits() {
         $ENV{LC_ALL} = "C";
         foreach my $branch (@sorted_branches) {
             open GIT, "-|",
-            "git", "log", "--since=$begin", "--until=$end", "--no-merges",
+            "git", "log", "-M", "--since=$begin", "--until=$end", "--no-merges",
             ($diffstat ? ( "--shortstat" ) : ()),
             "--pretty=format:%ae %ct %h %p", $branch, @prevbranches,
             "--", "*.cpp", "*.h"
