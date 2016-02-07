@@ -4,7 +4,10 @@ use warnings;
 
 # global variables
 my @repos;
+my %branchstats;
+my @sorted_branches;
 my %commits;
+my %commitdiffstats;
 my $refs = "refs/remotes/origin";
 my $limit = 0;
 my $csvfh;
@@ -13,22 +16,36 @@ my $gnuplotmaster;
 my @exclude;
 my $mode = "weekly";
 my $since;
+my $diffstat = 0;
 
 my @genericDomains = qw(gmail.com googlemail.com hotmail.com
 kde.org kdemail.net kate-editor.org oxygen-icons.org mail.com
-freedesktop.org gnome.org
+freedesktop.org gnome.org sourceforge.net
 gentoo.org fedoraproject.org freebsd.org free.fr freenet.de
-gmx.at gmx.com gmx.de gmx.net terra.es web.de webspeed.dk yahoo.com yahoo.fr);
+gmx.at gmx.com gmx.de gmx.net terra.es web.de webspeed.dk yahoo.com yahoo.fr
+tiscali.it yandex.ru me.com email.cz iki.fi
+);
+
+sub mapAuthorToAuthor($) {
+    $_ = $_[0];
+    return "hjk121\@nokiamail.com" if $_ eq "qtc-committer\@nokia.com";
+    return "hjk121\@nokiamail.com" if $_ eq "qthjk\@ovi.com";
+    return "erich.keane\@intel.com" if $_ eq "erich.keane\@verizon.net";
+    return $_;
+}
 
 sub mapAuthorToEmployer($) {
+    $_ = $_[0];
     return "(bot)" if $_ eq "qt_submodule_update_bot\@ovi.com";
     return "(bot)" if $_ eq "scripty\@kde.org";
     /(.*)@(.*)/ or return $_;
     my $user = $1;
     my $domain = lc $2;
-    return "nokia.com" if ($domain eq "ovi.com");
-    return "$user\@$domain" if grep { $_ eq $domain } @genericDomains;
+    return "digia.com" if ($_ eq "qt_aavit\@ovi.com");
+    return "digia.com" if ($_ eq "hjk121\@nokiamail.com");
+    return "(individuals)" if grep { $_ eq $domain } @genericDomains;
     return "QNX (by kdab.com)" if $_ =~ /\.qnx\@kdab.com/;
+    return "blackberry.com" if $domain eq "rim.com";
     return "intel.com" if $_ =~ /.intel.com$/;
     return $domain;
 }
@@ -37,7 +54,12 @@ sub mapToEmployers($) {
     my %commits = %{$_[0]};
     my %result;
     while (my ($key, $list) = each %commits) {
-        $result{$key} = [ map { mapAuthorToEmployer($_) } @{$list} ];
+        while (my ($author, $count) = each %{$list}) {
+            my $employer = mapAuthorToEmployer $author;
+            $result{$key}{$employer} = 0
+                unless defined($result{$key}{$employer});
+            $result{$key}{$employer} += $count;
+        }
     }
     return \%result;
 }
@@ -101,29 +123,76 @@ sub getAllCommits() {
     print STDERR "Data from $begin to $end\n";
 
     foreach my $repo (@repos) {
-        chdir($repo) or die;
+        chdir($repo) or die("chdir: $repo: $!");
 
-        # Get a listing of branches in the remote
+        # Get a listing of tags in the repo, in creation order
         open GIT, "-|",
-            "git", "for-each-ref", "--format=%(objectname)", $refs
+            "git", "for-each-ref", "--sort=taggerdate",
+            "--format=%(refname:short)", "refs/tags"
                 or die "Cannot run git-for-each-ref on $repo: $!";
-        my @branches = map { chomp; $_ } <GIT>;
+        @sorted_branches = map { chomp; $_ } <GIT>;
         close GIT;
         die "git-for-each-ref error" if $?;
 
-        # Now get a listing of every committer in those branches
-        open GIT, "-|",
-            "git", "log", "--since=$begin", "--until=$end",
-            "--pretty=format:%ae %ct", @branches
-                or die("Cannot run git-log on $repo: $!");
-        while (<GIT>) {
-            chomp;
-            my ($author, $date) = split / /;
-            my $week = strftime $timeformat, gmtime($date);
-            push @{$commits{$week}}, $author;
+        if ($refs =~ /\*$/) {
+            # Get a listing of branches in the repo
+            open GIT, "-|",
+                "git", "for-each-ref", "--format=%(refname:short)", $refs
+                    or die "Cannot run git-for-each-ref on $repo: $!";
+            push @sorted_branches, map { chomp; $_ } <GIT>;
+            close GIT;
+            die "git-for-each-ref error" if $?;
+        } else {
+            # Add the branches in the priority order
+            push @sorted_branches, split(/\s+/, $refs);
         }
-        close GIT;
-        die "git-log error" if $?;
+        my @prevbranches;
+
+        # Now get a listing of every committer in those branches
+        $ENV{LC_ALL} = "C";
+        foreach my $branch (@sorted_branches) {
+            open GIT, "-|",
+            "git", "log", "--since=$begin", "--until=$end",
+            ($diffstat ? ( "--shortstat" ) : ()),
+            "--pretty=format:%ae %ct %h %p", $branch, @prevbranches,
+            "--", "*.cpp", "*.h"
+                or die("Cannot run git-log on $repo: $!");
+            while (<GIT>) {
+              commit_begin:
+                chomp;
+                my ($author, $date, $sha1, @parents) = split / /;
+                $author = mapAuthorToAuthor($author);
+                my $week = strftime $timeformat, gmtime($date);
+                $commits{$week}{$author} = 0
+                    unless defined($commits{$week}{$author});
+                ++$commits{$week}{$author};
+                $branchstats{$week}{$branch} = 0
+                    unless defined($branchstats{$week}{$branch});
+                ++$branchstats{$week}{$branch};
+
+                next unless $diffstat;
+                $_ = <GIT>;
+                next unless $_ =~ /^ /;
+                chomp;
+                next if $_ eq "";
+                /(\d+) insertions.* (\d+) deletions/;
+                $commitdiffstats{$week}{$author} = 0
+                    unless defined $commitdiffstats{$week}{$author};
+                my $value = $1;# * 2 + $2;
+                if ($value > 5000) {
+                    print STDERR "Skipping change ${sha1} because too many lines were changed ($1), repo $repo\n";
+                } else {
+                    $commitdiffstats{$week}{$author} += $value;
+                }
+
+                # eat the empty line
+                $_ = <GIT>;
+            }
+            close GIT;
+            die "git-log error" if $?;
+
+            push @prevbranches, "^$branch";
+        }
     }
 }
 
@@ -134,14 +203,14 @@ sub printCsvStats($) {
     my %activity_overall;
     my %total_per_week;
     while (my ($week, $commits) = each %commits) {
-        foreach my $author (@{$commits}) {
+        while (my ($author, $count) = each %{$commits}) {
             next if grep { $_ eq $author } @exclude;
             # Author stats
-            $activity_per_week{$week}{$author}++;
-            $activity_overall{$author}++;
+            $activity_per_week{$week}{$author} += $count;
+            $activity_overall{$author} += $count;
 
             # overall stats
-            $total_per_week{$week}++;
+            $total_per_week{$week} += $count;
         }
     }
 
@@ -219,21 +288,28 @@ sub printGnuplotStats($%) {
     my %activity_overall;
     my %total_per_week;
     while (my ($week, $commits) = each %commits) {
-        foreach my $author (@{$commits}) {
+        while (my ($author, $count) = each %{$commits}) {
             next if grep { $_ eq $author } @exclude;
             # Author stats
-            $activity_per_week{$week}{$author}++;
-            $activity_overall{$author}++;
+            $activity_per_week{$week}{$author} += $count;
+            $activity_overall{$author} += $count;
 
             # overall stats
-            $total_per_week{$week}++;
+            $total_per_week{$week} += $count;
         }
     }
 
     # sort by decreasing order of activity
-    my @sorted_authors =
-        sort { $activity_overall{$b} <=> $activity_overall{$a} }
-        keys %activity_overall;
+    my @sorted_authors;
+    if (scalar @_ >= 3) {
+        for (reverse @{$_[2]}) {
+            push @sorted_authors, $_ if defined($activity_overall{$_});
+        }
+    } else {
+        @sorted_authors =
+            sort { $activity_overall{$b} <=> $activity_overall{$a} }
+            keys %activity_overall;
+    }
     @sorted_authors = @sorted_authors[0 .. $limit - 1]
         if $limit > 0;
 
@@ -349,6 +425,7 @@ END
 
 my $recurse = 1;
 my $printAuthor = 1;
+my $printBranches = 0;
 my $printEmployer = 1;
 my $csv;
 while (scalar @ARGV) {
@@ -363,8 +440,12 @@ while (scalar @ARGV) {
         $recurse = $argvalue;
     } elsif (/^-author/) {
         $printAuthor = $argvalue;
+    } elsif (/^-branches/) {
+        $printBranches = $argvalue;
     } elsif (/^-employer/) {
         $printEmployer = $argvalue;
+    } elsif (/^-diffstat/) {
+        $diffstat = $argvalue;
     } elsif (/^-refs/) {
         $refs = shift @ARGV;
     } elsif (/^-limit/) {
@@ -405,7 +486,7 @@ if (!defined($gnuplot)) {
     # write the secondary data files to "gnuplot.NNN.csv"
     $gnuplot = "gnuplot";
 } else {
-    open($gnuplotmaster, ">", $gnuplot)
+    open($gnuplotmaster, ">", $gnuplot . ".gnuplot")
         or die "Cannot open output file $csv: $!";
 }
 
@@ -423,6 +504,10 @@ if (defined($csv)) {
 if (defined($gnuplot)) {
     printGnuplotStats("author", \%commits) if $printAuthor;
     printGnuplotStats("employer", \%employerCommits)  if $printEmployer;
+    printGnuplotStats("volume.author", \%commitdiffstats)
+        if $printAuthor and $diffstat;
+    $limit = 0;
+    printGnuplotStats("branch", \%branchstats, \@sorted_branches) if $printBranches;
 }
 
 # -*- mode: perl; encoding: utf-8; indent-tabs-mode: nil -*-
