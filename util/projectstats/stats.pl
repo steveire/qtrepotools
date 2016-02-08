@@ -59,6 +59,7 @@ sub mapToEmployers($) {
     my %result;
     while (my ($key, $list) = each %commits) {
         while (my ($author, $count) = each %{$list}) {
+            next if grep { $_ eq $author } @exclude;
             my $employer = mapAuthorToEmployer $author;
             $result{$key}{$employer} = 0
                 unless defined($result{$key}{$employer});
@@ -268,62 +269,6 @@ sub printCsvStats($) {
     select STDOUT;
 }
 
-sub printCsvStatsEmployer($) {
-    select $csvfh;
-    my %commits = %{$_[0]};
-    my %activity_per_week;
-    my %activity_overall;
-    my %total_per_week;
-    while (my ($week, $commits) = each %commits) {
-        while (my ($author, $count) = each %{$commits}) {
-            next if grep { $_ eq $author } @exclude;
-            # Author stats
-            $activity_per_week{$week}{$author} += $count;
-            $activity_overall{$author} += $count;
-
-            # overall stats
-            $total_per_week{$week} += $count;
-        }
-    }
-
-    # sort by decreasing order of activity
-    my @sorted_authors =
-        sort { $activity_overall{$b} <=> $activity_overall{$a} }
-        keys %activity_overall;
-    @sorted_authors = @sorted_authors[0 .. $limit - 1]
-        if $limit > 0;
-
-    my @sorted_weeks = sort keys %total_per_week;
-
-    # print author header
-    map { print ',"' . $_ . '"' } @sorted_authors;
-    print "\n";
-
-    # print data
-    foreach my $week (@sorted_weeks) {
-        my %this_week = %{$activity_per_week{$week}};
-        my $total_printed = 0;
-        print "\"$week\",";
-
-        foreach my $author (@sorted_authors) {
-            my $count = $this_week{$author};
-            $count = 0 unless defined($count);
-            $total_printed += $count;
-            print "$count,";
-        }
-
-        print "\n";
-    }
-    print "\n";
-
-    # print unique contributors
-    map { print ",\"$_\"" } @sorted_weeks;
-    print "\n\"Unique contributors\"";
-    map { print ',' . scalar $activity_per_week{$_} } @sorted_weeks;
-
-    select STDOUT;
-}
-
 sub printCsvSummary() {
     my %total_per_week;
     my $grand_total;
@@ -351,7 +296,8 @@ sub printCsvSummary() {
 sub printGnuplotStats($%) {
     my $dataname = $_[0];
     my $datalabel = $_[1];
-    my %commits = %{$_[2]};
+    my $otherFlag = $_[2];
+    my %commits = %{$_[3]};
     my $datafile = "$gnuplot.$dataname.csv";
     my %activity_per_week;
     my %activity_overall;
@@ -370,8 +316,8 @@ sub printGnuplotStats($%) {
 
     # sort by decreasing order of activity
     my @sorted_authors;
-    if (scalar @_ >= 4) {
-        for (reverse @{$_[3]}) {
+    if (scalar @_ >= 5) {
+        for (reverse @{$_[4]}) {
             push @sorted_authors, $_ if defined($activity_overall{$_});
         }
     } else {
@@ -568,13 +514,13 @@ chdir $pwd or die;
 my %employerCommits = %{mapToEmployers(\%commits)};
 if (defined($csv)) {
     printCsvStats(\%commits) if $printAuthor;
-    printCsvStatsEmployer(\%employerCommits) if $printEmployer;
+    printCsvStats(\%employerCommits) if $printEmployer;
     printCsvSummary();
 }
 if (defined($gnuplot)) {
-    printGnuplotStats("author", "Commits", \%commits) if $printAuthor;
-    printGnuplotStats("employer", "Commits", \%employerCommits)  if $printEmployer;
-    printGnuplotStats("volume.author", "Affected lines", \%commitdiffstats)
+    printGnuplotStats("author", "Commits", "Other", \%commits) if $printAuthor;
+    printGnuplotStats("employer", "Commits", "NoOther", \%employerCommits)  if $printEmployer;
+    printGnuplotStats("volume.author", "Lines added", "Other", \%commitdiffstats)
         if $printAuthor and $diffstat;
     $limit = 0;
     printGnuplotStats("branch", \%branchstats, \@sorted_branches) if $printBranches;
