@@ -38,18 +38,20 @@ sub mapAuthorToAuthor($) {
 
 sub mapAuthorToEmployer($) {
     $_ = $_[0];
-    return "(bot)" if $_ eq "qt_submodule_update_bot\@ovi.com";
-    return "(bot)" if $_ eq "scripty\@kde.org";
+#     return "(bot)" if $_ eq "qt_submodule_update_bot\@ovi.com";
+#     return "(bot)" if $_ eq "scripty\@kde.org";
     /(.*)@(.*)/ or return $_;
     my $user = $1;
     my $domain = lc $2;
-    return "digia.com" if ($_ eq "qt_aavit\@ovi.com");
-    return "digia.com" if ($_ eq "hjk121\@nokiamail.com");
-    return "(individuals)" if grep { $_ eq $domain } @genericDomains;
-    return "QNX (by kdab.com)" if $_ =~ /\.qnx\@kdab.com/;
-    return "blackberry.com" if $domain eq "rim.com";
-    return "intel.com" if $_ =~ /.intel.com$/;
-    return $domain;
+    return "Kitware" if ($domain eq "kitware.com");
+    return "(individuals)";
+#     return "digia.com" if ($_ eq "qt_aavit\@ovi.com");
+#     return "digia.com" if ($_ eq "hjk121\@nokiamail.com");
+#     return "(individuals)" if grep { $_ eq $domain } @genericDomains;
+#     return "QNX (by kdab.com)" if $_ =~ /\.qnx\@kdab.com/;
+#     return "blackberry.com" if $domain eq "rim.com";
+#     return "intel.com" if $_ =~ /.intel.com$/;
+#     return $domain;
 }
 
 sub mapToEmployers($) {
@@ -254,6 +256,62 @@ sub printCsvStats($) {
         # print the "others" column
         print $total_per_week{$week} - $total_printed
             if $limit > 0;
+        print "\n";
+    }
+    print "\n";
+
+    # print unique contributors
+    map { print ",\"$_\"" } @sorted_weeks;
+    print "\n\"Unique contributors\"";
+    map { print ',' . scalar $activity_per_week{$_} } @sorted_weeks;
+
+    select STDOUT;
+}
+
+sub printCsvStatsEmployer($) {
+    select $csvfh;
+    my %commits = %{$_[0]};
+    my %activity_per_week;
+    my %activity_overall;
+    my %total_per_week;
+    while (my ($week, $commits) = each %commits) {
+        while (my ($author, $count) = each %{$commits}) {
+            next if grep { $_ eq $author } @exclude;
+            # Author stats
+            $activity_per_week{$week}{$author} += $count;
+            $activity_overall{$author} += $count;
+
+            # overall stats
+            $total_per_week{$week} += $count;
+        }
+    }
+
+    # sort by decreasing order of activity
+    my @sorted_authors =
+        sort { $activity_overall{$b} <=> $activity_overall{$a} }
+        keys %activity_overall;
+    @sorted_authors = @sorted_authors[0 .. $limit - 1]
+        if $limit > 0;
+
+    my @sorted_weeks = sort keys %total_per_week;
+
+    # print author header
+    map { print ',"' . $_ . '"' } @sorted_authors;
+    print "\n";
+
+    # print data
+    foreach my $week (@sorted_weeks) {
+        my %this_week = %{$activity_per_week{$week}};
+        my $total_printed = 0;
+        print "\"$week\",";
+
+        foreach my $author (@sorted_authors) {
+            my $count = $this_week{$author};
+            $count = 0 unless defined($count);
+            $total_printed += $count;
+            print "$count,";
+        }
+
         print "\n";
     }
     print "\n";
@@ -510,7 +568,7 @@ chdir $pwd or die;
 my %employerCommits = %{mapToEmployers(\%commits)};
 if (defined($csv)) {
     printCsvStats(\%commits) if $printAuthor;
-    printCsvStats(\%employerCommits) if $printEmployer;
+    printCsvStatsEmployer(\%employerCommits) if $printEmployer;
     printCsvSummary();
 }
 if (defined($gnuplot)) {
