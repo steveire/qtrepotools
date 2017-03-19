@@ -30,9 +30,19 @@ tiscali.it yandex.ru me.com email.cz iki.fi
 
 sub mapAuthorToAuthor($) {
     $_ = $_[0];
-    return "hjk121\@nokiamail.com" if $_ eq "qtc-committer\@nokia.com";
-    return "hjk121\@nokiamail.com" if $_ eq "qthjk\@ovi.com";
-    return "erich.keane\@intel.com" if $_ eq "erich.keane\@verizon.net";
+    return "steveire AT gmail.com" if $_ eq "steveire\@gmail.com";
+    return "brad.king AT kitware.com" if $_ eq "brad.king\@kitware.com";
+    return "sebholt AT xwmw.org" if $_ eq "sebholt\@xwmw.org";
+    return "daniel AT pfeifer-mail.de" if $_ eq "daniel\@pfeifer-mail.de";
+    return "tobias.hunger AT qt.io" if $_ eq "tobias.hunger\@qt.io";
+    return "michael.stuermer AT schaeffler.com" if $_ eq "michael.stuermer\@schaeffler.com";
+    return "gjasny AT googlemail.com" if $_ eq "gjasny\@googlemail.com";
+    return "robert.maynard AT kitware.com" if $_ eq "robert.maynard\@kitware.com";
+    return "davispuh AT gmail.com" if $_ eq "davispuh\@gmail.com";
+    return "clinton AT elemtech.com" if $_ eq "clinton\@elemtech.com";
+    return "ben.boeckel AT kitware.com" if $_ eq "ben.boeckel\@kitware.com";
+    return "nilsgladitz AT gmail.com" if $_ eq "nilsgladitz\@gmail.com";
+    return "gillesk AT microsoft.com" if $_ eq "gillesk\@microsoft.com";
     return $_;
 }
 
@@ -336,7 +346,7 @@ sub printGnuplotStats($%) {
     if ($otherFlag eq "Other") {
     $colcount-- if grep { $_ eq "others" } @exclude and $limit > 0;
     } else {
-    $colcount-- 
+    $colcount--
     }
     $colcount-- if $limit == 0;
 
