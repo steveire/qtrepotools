@@ -325,13 +325,19 @@ sub printGnuplotStats($%) {
             sort { $activity_overall{$b} <=> $activity_overall{$a} }
             keys %activity_overall;
     }
+    if ($otherFlag eq "Other") {
     @sorted_authors = @sorted_authors[0 .. $limit - 1]
         if $limit > 0;
+    }
 
     my @sorted_weeks = sort keys %total_per_week;
 
     my $colcount = scalar @sorted_authors + 3;
+    if ($otherFlag eq "Other") {
     $colcount-- if grep { $_ eq "others" } @exclude and $limit > 0;
+    } else {
+    $colcount-- 
+    }
     $colcount-- if $limit == 0;
 
     # write the plot
@@ -401,7 +407,9 @@ END
 
     print 'idx Week ';
     map { print "\"$_\" "; } @sorted_authors;
+    if ($otherFlag eq "Other") {
     print 'others ' if $limit > 0;
+    }
     print "\n";
     $i = 0;
     foreach my $week (@sorted_weeks) {
@@ -427,9 +435,12 @@ END
             print "$count ";
         }
 
+        if ($otherFlag eq "Other") {
+
         # print the "others" column
         print $total_per_week{$week} - $total_printed
             if $limit > 0;
+            }
         print "\n";
         $i++;
     }
