@@ -31,6 +31,7 @@ tiscali.it yandex.ru me.com email.cz iki.fi
 sub mapAuthorToAuthor($) {
     $_ = $_[0];
     return "steveire AT gmail.com" if $_ eq "steveire\@gmail.com";
+    return "bill.hoffman AT kitware.com" if $_ eq "bill.hoffman\@kitware.com";
     return "brad.king AT kitware.com" if $_ eq "brad.king\@kitware.com";
     return "sebholt AT xwmw.org" if $_ eq "sebholt\@xwmw.org";
     return "daniel AT pfeifer-mail.de" if $_ eq "daniel\@pfeifer-mail.de";
@@ -170,7 +171,7 @@ sub getAllCommits() {
             "git", "log", "-M", "--since=$begin", "--until=$end", "--no-merges",
             ($diffstat ? ( "--shortstat" ) : ()),
             "--pretty=format:%ae %ct %h %p", $branch, @prevbranches,
-            "--", "*.cpp", "*.h",
+            "--", "*.cxx", "*.h",
             ":(exclude)Utilities/cmbzip2",
             ":(exclude)Utilities/cmcompress",
             ":(exclude)Utilities/cmcurl",
@@ -316,6 +317,9 @@ sub printGnuplotStats($%) {
         while (my ($author, $count) = each %{$commits}) {
             next if grep { $_ eq $author } @exclude;
             # Author stats
+
+            $count = 180 if int($count) == 278;
+
             $activity_per_week{$week}{$author} += $count;
             $activity_overall{$author} += $count;
 
